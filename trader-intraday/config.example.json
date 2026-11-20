@@ -1,0 +1,21 @@
+{
+  "market": "NSE",
+  "currency": "INR",
+  "range_minutes": 15,
+  "target_r": 2.0,
+  "max_position_pct": 75.0,
+  "max_trade_value_inr": 10000.0,
+  "capital_inr": 100000.0,
+  "max_loss_per_trade_inr": 1000.0,
+  "max_trades_per_day": 20,
+  "max_open_positions": 10,
+  "max_open_risk_inr": 3000.0,
+  "max_daily_loss_inr": 3000.0,
+  "slippage_bps": 10.0,
+  "brokerage_per_order_inr": 20.0,
+  "transaction_bps": 1.0,
+  "stt_sell_bps": 2.5,
+  "gst_bps": 1800.0,
+  "paper": true,
+  "execution_enabled": false
+}

@@ -16,6 +16,8 @@ past day the same setup fired, and tells you the honest odds.
 And no trade goes through until you say yes. Nothing in this pack can place
 an order on its own. Paper trading is the default.
 
+For the current NSE intraday handover, verified status, and next-session checklist, see [HANDOVER.md](HANDOVER.md).
+
 > **Looking for the original Trader skill?** Copy an investor's 13F, the
 > stock screener, tax lots and rebalancing live in
 > [github.com/Jakeschincariol/trader-skill](https://github.com/Jakeschincariol/trader-skill).
@@ -57,6 +59,69 @@ The tools need Python 3.8 or newer. Nothing to pip install. The SEC tools
 email in `trader/config.json` (`"sec_user_agent": "Your Name you@example.com"`)
 or in the `SEC_USER_AGENT` environment variable.
 
+## India intraday extension
+
+The `trader-universe` and `trader-intraday` folders on this branch add an
+Indian NSE workflow for long-only intraday cash-equity research. The universe
+syncs Angel One's public instrument master and filters NSE cash equities. The
+daily runner defaults to the official Nifty 1000 profile, intersected with the
+current Angel One NSE EQ master; use `--full-universe` for all cached NSE EQ
+symbols.
+Intraday uses timestamped bars, IST/NSE session conventions and an
+opening-range example. It now includes a full-universe scanner, a read-only
+NSE corporate-announcement monitor, a completed-bar watcher, paper alerts,
+portfolio cash, aggregate open-risk and daily-loss gating, a persistent paper
+journal, a strict preflight report, exchange-calendar checks, and a U.S.-style
+plan time machine plus multi-day replay. `daily_runner.py` now ranks setups by
+relative breakout quality, rescans completed 5-minute bars, retries delayed
+entry bars, and recycles capacity after exits. Its default data split is Yahoo
+for breakout scanning/selection and Angel One LTP for live paper monitoring.
+It orchestrates those stages as one restart-safe paper process, and
+`dashboard.py` serves a read-only live view. It is paper-only.
+The original eleven skills remain the U.S.-market baseline; this extension does
+not silently reinterpret their U.S. data or session rules. Indian plans default
+to a maximum ₹10,000 notional per trade, in addition to the maximum-loss rule.
+
+```bash
+python3 trader-universe/universe.py sync
+python3 trader-universe/universe.py sync --index nifty1000 \
+  --out trader/nifty1000_universe.json
+python3 trader-universe/universe.py list --limit 50
+python3 trader-intraday/intraday.py scan --symbol RELIANCE \
+  --csv data/reliance-5m.csv
+python3 trader-intraday/intraday.py scan --symbol RELIANCE \
+  --yahoo --interval 5m --range 1d --day 2026-11-13 --json
+python3 trader-intraday/intraday.py scan --symbol RELIANCE \
+  --angelone --credentials-file D:\\MyStockMarketTool\\ScreenEdge.Api\\appsettings.json \
+  --universe trader/nse_universe.json --day 2026-11-13 --json
+python3 trader-intraday/nse_news.py --symbols RELIANCE INFY --hours 24 --json
+python3 trader-intraday/scan.py --universe trader/nse_universe.json \
+  --yahoo --day 2026-11-13 --write
+python3 trader-intraday/daily_runner.py --yahoo --day 2026-11-16 \
+  --capital 100000 --max-loss 1000 --max-trade-value 10000 \
+  --max-open-risk 3000 --rescan-every-minutes 5
+python3 trader-intraday/daily_runner.py --nifty1000 --yahoo --day 2026-11-16 \
+  --capital 100000 --max-loss 1000 --max-trade-value 10000 \
+  --max-open-risk 3000 --rescan-every-minutes 5
+python3 trader-intraday/dashboard.py --host 127.0.0.1 --port 8765
+python3 trader-intraday/watch.py --symbol RELIANCE --yahoo --day 2026-11-13
+python3 trader-intraday/alerts.py --plan trader/intraday_plan.json \
+  --offline data/today --now 2026-11-13T15:20:00+05:30 --json
+python3 trader-intraday/batch_backtest.py --csv-dir data/nse-5m --json
+python3 trader-intraday/replay.py --csv-dir data/nse-history --iterations 10000 --json
+python3 trader-intraday/replay.py --csv data/reliance-5m-history.csv \
+  --plan trader/intraday_plan.json --replays 10000 --window 2 --json
+python3 trader-intraday/preflight.py --day 2026-11-16 \
+  --universe trader/nse_universe.json --json
+python3 trader-intraday/paper_journal.py status --json
+```
+
+The default strategies are replaceable examples, not investment advice and not
+the user's later options strategy. Options, broker execution, shorting and
+margin are intentionally outside this Indian-market slice. Stock options
+should be added only as a separate layer on top of a verified underlying
+signal and the user's written strategy.
+
 ## The eleven
 
 | command | job | what it does |
@@ -73,6 +138,23 @@ or in the `SEC_USER_AGENT` environment variable.
 | `/trader-analyst` | Earnings Analyst | Reads earnings reports and sums up what changed. |
 | `/trader-pelosi` | Pelosi Tracker | Reads Congress's stock-trade disclosures the minute they are filed. |
 
+## The India extension
+
+| command | job | what it does |
+| --- | --- | --- |
+| `/trader-intraday` | NSE Intraday Research | Reads completed IST bars, scans an opening-range breakout, and creates an INR paper plan. |
+| `/trader-universe` | NSE Universe | Caches Angel One's instrument master and writes the NSE EQ symbol universe with broker tokens. |
+| NSE corporate announcements | NSE News | Reads exchange announcements, tags them for review and remembers seen items. |
+| NSE scanner | Universe Scanner | Runs the intraday rule over the cached NSE universe and records hits, no-setups and data errors. |
+| NSE watcher | Entry Timer | Polls completed bars for one symbol until the long-only setup triggers or expires. |
+| NSE alerts | Price Alerts | Checks paper stop, target and flat-by events from completed bars. |
+| NSE portfolio gate | Risk and Budget | Applies cash, ₹10,000 trade notional, aggregate open stop-risk, position-count and daily-loss limits to paper trades. |
+| NSE journal | Paper State | Persists simulated entries, exits, cash, open positions and realized daily P&L. |
+| NSE preflight | Readiness Gate | Checks calendar, universe freshness, limits, credentials and completed-bar quality. |
+| NSE replay | Time Machine | Replays a plan through same-symbol historical candle paths and prior ORB sessions. |
+| NSE daily runner | End-to-end paper workflow | Refreshes the universe, scans the full universe, checks news, ranks relative setup quality, retries candidates every completed 5-minute cycle, sizes paper entries and monitors exits with restart-safe state. |
+| NSE dashboard | Live paper view | Shows workflow stages, scan/news counts, selection/rejection counts, open-risk budget, paper positions, marks, P&L and journal exits; refreshes every five seconds. |
+
 ## How to use it
 
 Everything lands in a `trader/` folder in your project, and each skill reads
@@ -83,6 +165,18 @@ scanner -> news -> entry -> exit -> timemachine -> budget -> risk -> broker   (o
 alerts: stop, target, flat by the close                                       (while it is open)
 news / analyst / pelosi                                                        (on a schedule)
 ```
+
+The NSE paper flow is separate:
+
+```
+universe sync -> NSE announcements -> NSE universe scan -> one-symbol watcher
+-> paper plan -> plan time machine -> completed-bar alerts -> paper journal
+-> portfolio gate -> multi-day replay
+```
+
+The NSE announcement reader uses the exchange's corporate-filings feed for
+disclosures, not a sentiment or recommendation model. Open and verify each
+filing before treating it as relevant to a trade.
 
 An example, the trade in the reel: Tesla, Monday October 19 2026, real data.
 
@@ -210,6 +304,16 @@ trader-broker/      SKILL.md, ticket.py, claude_desktop_config.example.json
 trader-alerts/      SKILL.md, alerts.py, alerts.example.json
 trader-analyst/     SKILL.md, facts.py, metrics.example.json
 trader-pelosi/      SKILL.md, ptr.py
+india_market.py      shared IST, NSE session, symbol and tick conventions
+nse_calendar.py      dated NSE equity holidays and unknown-calendar guard
+india_universe.py    Angel One master normalization and NSE cash filtering
+trader-intraday/     SKILL.md, intraday.py, config.example.json
+                      nse_news.py, scan.py, watch.py, alerts.py,
+                      portfolio.py, paper_journal.py, paper_monitor.py,
+                      daily_runner.py, dashboard.py, dashboard.html,
+                      preflight.py,
+                      batch_backtest.py, replay.py
+trader-universe/     SKILL.md, universe.py
 tests/              unittest suite + offline fixtures
 ```
 

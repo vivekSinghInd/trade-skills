@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NSE Paper Trading Dashboard</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0b1020; --surface:#121a2b; --surface2:#18233a; --text:#eef4ff; --muted:#91a0ba; --line:#293653; --green:#45d483; --red:#ff6b7a; --yellow:#ffd166; --blue:#6ea8fe; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:linear-gradient(135deg,#0b1020 0%,#101a2d 100%); color:var(--text); font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif; }
+    main { max-width:1240px; margin:0 auto; padding:24px; }
+    header { display:flex; justify-content:space-between; gap:16px; align-items:flex-end; flex-wrap:wrap; margin-bottom:20px; }
+    h1,h2,h3,p { margin:0; } h1 { font-size:26px; letter-spacing:-.03em; } h2 { font-size:15px; margin-bottom:12px; } .muted { color:var(--muted); }
+    .toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; } button { border:1px solid var(--line); background:var(--surface2); color:var(--text); border-radius:8px; padding:8px 12px; cursor:pointer; } button:hover { border-color:var(--blue); }
+    .dot { width:9px; height:9px; display:inline-block; border-radius:50%; background:var(--green); margin-right:7px; box-shadow:0 0 12px var(--green); } .dot.error { background:var(--red); box-shadow:0 0 12px var(--red); }
+    .grid { display:grid; gap:14px; } .metrics { grid-template-columns:repeat(5,minmax(140px,1fr)); } .two { grid-template-columns:1.1fr .9fr; margin-top:14px; }
+    .card { background:rgba(18,26,43,.86); border:1px solid var(--line); border-radius:13px; padding:16px; box-shadow:0 12px 36px rgba(0,0,0,.18); }
+    .metric-label { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.08em; } .metric-value { font-size:24px; font-variant-numeric:tabular-nums; margin-top:3px; } .positive { color:var(--green); } .negative { color:var(--red); } .warning { color:var(--yellow); }
+    .stages { display:flex; gap:8px; flex-wrap:wrap; } .stage { display:flex; align-items:center; gap:7px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:#0e1729; } .stage b { font-size:11px; letter-spacing:.05em; }
+    table { width:100%; border-collapse:collapse; } th,td { text-align:left; padding:10px 8px; border-bottom:1px solid var(--line); white-space:nowrap; } th { color:var(--muted); font-size:12px; font-weight:500; } td.num { text-align:right; font-variant-numeric:tabular-nums; }
+    .status { font-size:12px; font-weight:600; letter-spacing:.04em; } .status.WAITING,.status.MONITORING { color:var(--yellow); } .status.ERROR { color:var(--red); } .status.TRIGGERED,.status.EXPIRED { color:var(--green); }
+    .timeline { display:grid; gap:8px; } .event { display:flex; gap:10px; align-items:flex-start; padding:9px 0; border-bottom:1px solid var(--line); } .event:last-child { border-bottom:0; } .event-time { width:155px; color:var(--muted); font-variant-numeric:tabular-nums; }
+    .bar { height:8px; background:#25324d; border-radius:99px; overflow:hidden; margin-top:8px; } .bar > span { display:block; height:100%; background:var(--blue); }
+    .note { color:var(--muted); font-size:12px; margin-top:12px; } .empty { color:var(--muted); padding:18px 0; }
+    @media (max-width:900px) { .metrics { grid-template-columns:repeat(2,minmax(140px,1fr)); } .two { grid-template-columns:1fr; } }
+    @media (max-width:520px) { main { padding:14px; } .metrics { grid-template-columns:1fr 1fr; gap:9px; } .metric-value { font-size:20px; } th,td { padding:8px 5px; font-size:12px; } .event-time { width:115px; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div><h1>NSE paper trading</h1><p class="muted" id="subtitle">Loading end-to-end workflow…</p></div>
+    <div class="toolbar"><span id="connection"><span class="dot"></span>Connecting</span><button id="refresh" type="button">Refresh now</button></div>
+  </header>
+  <section class="grid metrics" aria-live="polite">
+    <div class="card"><div class="metric-label">Runner</div><div class="metric-value" id="runner">—</div></div>
+    <div class="card"><div class="metric-label">Realized P&amp;L</div><div class="metric-value" id="realized">—</div></div>
+    <div class="card"><div class="metric-label">Unrealized P&amp;L</div><div class="metric-value" id="unrealized">—</div></div>
+    <div class="card"><div class="metric-label">Open positions</div><div class="metric-value" id="open">—</div></div>
+    <div class="card"><div class="metric-label">Last update</div><div class="metric-value" id="updated" style="font-size:16px">—</div></div>
+  </section>
+  <section class="card" style="margin-top:14px"><h2>Workflow stages</h2><div class="stages" id="stages"></div></section>
+  <section class="grid two">
+    <div class="card"><h2>Paper positions</h2><div class="table-responsive"><table><thead><tr><th>Symbol</th><th>Status</th><th class="num">Entry</th><th class="num">Last</th><th class="num">Stop</th><th class="num">Target</th><th class="num">Unrealized</th></tr></thead><tbody id="positions"><tr><td colspan="7" class="empty">No positions loaded.</td></tr></tbody></table></div></div>
+    <div class="card"><h2>Universe and selection</h2><div id="scan"></div><div class="bar"><span id="scanbar" style="width:0%"></span></div><div class="note" id="news"></div><div class="note" id="selection"></div><div class="note" id="notes"></div></div>
+  </section>
+  <section class="card" style="margin-top:14px"><h2>Candidate selection</h2><div class="table-responsive"><table><thead><tr><th>Rank</th><th>Symbol</th><th>Status</th><th class="num">Score</th><th class="num">Entry</th><th class="num">Stop</th><th class="num">Target</th><th>Reason</th></tr></thead><tbody id="candidates"><tr><td colspan="8" class="empty">No candidates loaded.</td></tr></tbody></table></div></section>
+  <section class="card" style="margin-top:14px"><h2>Trade journal</h2><div class="timeline" id="trades"><div class="empty">No exits recorded yet.</div></div></section>
+</main>
+<script>
+  const $ = id => document.getElementById(id);
+  const money = v => `₹${Number(v || 0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const time = v => v ? new Date(v).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '—';
+  function pnl(el,v){ el.textContent=money(v); el.className='metric-value '+(Number(v)>0?'positive':Number(v)<0?'negative':''); }
+  function stageClass(value){ return value==='ERROR'||value==='BLOCKED'?'error':''; }
+  function render(d){
+    $('subtitle').textContent=`${d.day || '—'} · ${d.paper_only?'paper-only':'execution disabled'} · ${d.as_of ? time(d.as_of) : 'waiting for runner'}`;
+    $('runner').textContent=d.runner_status || 'WAITING'; $('runner').className='metric-value '+(d.runner_status==='DATA_ERROR'?'negative':'');
+    pnl($('realized'),d.portfolio?.realized_pnl_inr); pnl($('unrealized'),d.portfolio?.unrealized_pnl_inr); $('open').textContent=d.portfolio?.open_positions ?? 0; $('updated').textContent=time(d.as_of);
+    $('stages').innerHTML=Object.entries(d.stages||{}).map(([k,v])=>`<div class="stage"><span class="dot ${stageClass(v)}"></span><b>${k.toUpperCase()}</b><span class="muted">${v}</span></div>`).join('');
+    const rows=(d.positions||[]).map(p=>`<tr><td><b>${p.symbol}</b></td><td class="status ${p.status||''}">${p.status||'OPEN'}</td><td class="num">${Number(p.entry).toFixed(2)}</td><td class="num">${p.last_price==null?'—':Number(p.last_price).toFixed(2)}</td><td class="num">${Number(p.stop).toFixed(2)}</td><td class="num">${Number(p.target).toFixed(2)}</td><td class="num ${Number(p.unrealized_pnl_inr)>0?'positive':Number(p.unrealized_pnl_inr)<0?'negative':''}">${p.unrealized_pnl_inr==null?'—':money(p.unrealized_pnl_inr)}</td></tr>`).join('');
+    $('positions').innerHTML=rows||'<tr><td colspan="7" class="empty">No open paper positions.</td></tr>';
+    const candidateRows=(d.candidate_board||[]).map(c=>`<tr><td>${c.rank||'—'}</td><td><b>${c.symbol||'—'}</b></td><td class="status ${c.status||''}">${c.status||'—'}</td><td class="num">${c.score==null?'—':Number(c.score).toFixed(2)}</td><td class="num">${c.entry==null?'—':Number(c.entry).toFixed(2)}</td><td class="num">${c.stop==null?'—':Number(c.stop).toFixed(2)}</td><td class="num">${c.target==null?'—':Number(c.target).toFixed(2)}</td><td class="muted">${c.reason||'—'}</td></tr>`).join(''); $('candidates').innerHTML=candidateRows||'<tr><td colspan="8" class="empty">No candidates loaded.</td></tr>';
+    const s=d.scan||{}; $('scan').innerHTML=`<div class="muted">Full universe</div><div style="font-size:21px;margin:3px 0">${s.scanned||0} scanned</div><div class="muted">${s.breakout_hits||0} breakouts · ${s.no_setup||0} no setup · ${s.errors||0} data errors</div>`; $('scanbar').style.width=`${s.scanned?Math.min(100,100*(s.scanned/(s.universe_count||s.scanned))):0}%`;
+    $('news').textContent=`News: ${d.news?.fresh_items||0} fresh items · ${d.news?.errors?.length||0} errors`;
+    const q=d.selection||{}, lim=d.limits||{}; $('selection').textContent=`Selection: ${q.paper_setups||0} setups · ${q.entered||0} entered · ${q.rejected||0} rejected · ${q.rescans||0} rescans · open risk ${money(d.portfolio?.open_risk_inr)} / ${money(lim.max_open_risk_inr)}`;
+    $('notes').textContent=(d.data_notes||[]).join(' ');
+    const trades=(d.trades||[]).slice().reverse().map(t=>`<div class="event"><div class="event-time">${time(t.exited_at)}</div><div><b>${t.symbol}</b> ${t.outcome} · ${money(t.net_pnl_inr)}<div class="muted">${t.qty} shares · entry ${Number(t.entry).toFixed(2)} → exit ${Number(t.exit).toFixed(2)}</div></div></div>`).join(''); $('trades').innerHTML=trades||'<div class="empty">No exits recorded yet.</div>';
+  }
+  async function refresh(){ try { const response=await fetch('/api/status?ts='+Date.now(),{cache:'no-store'}); if(!response.ok) throw new Error('status '+response.status); render(await response.json()); $('connection').innerHTML='<span class="dot"></span>Live · 5s refresh'; } catch(e) { $('connection').innerHTML='<span class="dot error"></span>Data unavailable'; } }
+  $('refresh').addEventListener('click',refresh); refresh(); setInterval(refresh,5000);
+</script>
+</body>
+</html>
